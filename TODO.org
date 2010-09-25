@@ -49,3 +49,33 @@
     + cd configs/syslinux-iso
     + make
     
+** node.js
+   utf8, ascii, and binary encodings. use ascii or binary when possible.
+
+   require("child_process").spawn()
+
+   require("fs")
+     + async fs methods have no guaranteed ordering
+
+   net.stream net.server, http
+*** require
+   require('builtin')
+   require('./rel/path')
+   requare('/abs/path')
+*** modules
+    [[http://nodejs.org/api.html#_modules][api reference]]
+    node uses the [[http://commonjs.org/specs/modules/1.0/][CommonJS modules spec]]
+**** example
+    var foo = 'Foo'; //not exported
+    exports.foo = function() {  // foo getter
+      return foo;
+    };
+    exports.bar = function(bar) {
+      return foo + bar;
+    };
+**** example include
+     var foobar = require("./foobar"),
+     sys = require('sys');
+
+     sys.puts("Foobar: " + foobar.bar("bar"));
+
