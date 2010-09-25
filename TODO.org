@@ -1,0 +1,51 @@
+* Notes
+** Generating an iso
+*** Json
+    var sample = {
+      name: 'string',
+      mkinitcpio: {
+        modules: [m1, m2, m3, ... mn],
+        binaries: [b1, b2, b3, ... bn],
+        files: [f1, f2, f3, ... fn],
+        hooks: [h1, h2, h3, ... hn],
+        compression: 'string' <- gzip|bzip2|lzma
+      },
+      packages: [p1, p2, p3, ... pn],
+      addons: [{
+        type: 'string' <- squashfs|bind,
+        files: [f1, f2, f3, ... fn]
+      }]
+    }
+**** Default data
+     var default = {
+       name: 'voussoir-test',
+       mkinitcpio: {
+         hooks: [
+           'base', 'udev', 'archiso', 'archiso_pxe_nbd', 'pata', 'scsi', 'sata',
+           'usb', 'fw', 'pcmcia', 'filesystems', 'usbinput'
+         ]
+       },
+       packages: ['base', 'kernel26', 'emacs-nox'],
+       addons: [{
+         type: bind|squashfs
+     }
+*** archiso expects
+     + packages :: file, one package per line
+     + addons :: single directory with an fstab 'config' file. can be either:
+                 + squashfs:
+                   - stick everything in a dir
+                   - run mksquashfs
+                   - copy image into addons directory
+                   - add to config "image_rel_addons    mountpoint    squashfs"
+                     for squashfs, mountpoint will always be /
+                   - order matters! later entries mounted UNDER earler entries
+                 + plain directory:
+                   - stick everything in a dir
+                   - copy it into addons dir
+                   - add to config "dir_rel_addons    mountpoint    bind"
+*** build steps
+    clean chroot takes ~400MB. max space usage is around 2GB
+    + copy archiso source directory, modify files in configs/syslinux-iso
+    + cd configs/syslinux-iso
+    + make
+    
