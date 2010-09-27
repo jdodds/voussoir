@@ -3,6 +3,7 @@
 *** Json
     var sample = {
       name: 'string',
+      arch: 'string' <- i686|x86_64
       mkinitcpio: {
         modules: [m1, m2, m3, ... mn],
         binaries: [b1, b2, b3, ... bn],
@@ -19,6 +20,7 @@
 **** Default data
      var default = {
        name: 'voussoir-test',
+       arch: 'i686',
        mkinitcpio: {
          hooks: [
            'base', 'udev', 'archiso', 'archiso_pxe_nbd', 'pata', 'scsi', 'sata',
