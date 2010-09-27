@@ -81,3 +81,31 @@
 
      sys.puts("Foobar: " + foobar.bar("bar"));
 
+* Bugs/issues
+** iso generation
+*** Mon Sep 27 08:10:21 EDT 2010 ::
+    * generating the iso the way it's done now requires synchronous execution of
+      pacman, which doesn't work because it uses a lock file. solutions:
+        + see if we can tell pacman to ignore the lock. this _should_ be safe,
+          we're always installing into a new environment. might not be though, and
+          it may be difficult to get pacman to ignore the lock, it's there for a
+          reason
+        + use a queue and generate isos one-by one. works, and avoids the
+          eventual problem we'll have with trying to do too much generation at
+          once. we don't want to do all this FIFO-style though, it would be better
+          to implement some n-at-once stuff later, which would bring us back to
+          square one.
+        + instead of using the archiso plain make in the already-made directory
+          they provide, put only what we need/want in the chroot, and make sure
+          that's what we're running from (we'll have to install pacman by
+          script/etc). This is the most work, but is probably the way to go (see
+          other issue below)
+    * the archiso script pulls lots over the network. we can not afford
+      this. the only immediately obvious solution is to do some local caching,
+      and only pull what we need over the network.
+        * when a user requests a new package, keep it locally until it hasn't
+          been requested again for x days (or we're running out of space). 
+        * same thing with pacman versions / other base data we need.
+       
+
+        
