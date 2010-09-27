@@ -65,23 +65,29 @@ server = http.createServer(function (request, response) {
         copy_tracker.on('written', function () {
           done_files += 1;
           if (done_files === num_files) {
-            fs.writeFile(
-              path.join(make_dir, 'packages.' + user_data.arch),
-              user_data.packages.join('\n'),
+            fs.chmod(
+              path.join(make_dir, 'download-repo.sh'),
+              0755,
               function (err) {
-                var maker = spawn(
-                  'make', [],
-                  {'cwd': fs.realpathSync(make_dir)}
+                fs.writeFile(
+                  path.join(make_dir, 'packages.' + user_data.arch),
+                  user_data.packages.join('\n'),
+                  function (err) {
+                    var maker = spawn(
+                      'make', [],
+                      {'cwd': fs.realpathSync(make_dir)}
+                    );
+                    maker.on('exit', function (code) {
+                      sys.puts('finished with code: ' + code);
+                    });
+                    maker.stdout.on('data', function (data) {
+                      sys.puts(user_data.name + ' ' + data);
+                    });
+                    maker.stderr.on('data', function (data) {
+                      sys.puts(user_data.name + ' ERR: ' + data);
+                    });
+                  }
                 );
-                maker.on('exit', function (code) {
-                  sys.puts('finished with code: ' + code);
-                });
-                maker.stdout.on('data', function (data) {
-                  sys.puts(user_data.name + ' ' + data);
-                });
-                maker.stderr.on('data', function (data) {
-                  sys.puts(user_data.name + ' ERR: ' + data);
-                });
               }
             );
           }
