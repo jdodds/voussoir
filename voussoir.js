@@ -1,5 +1,5 @@
 /*jslint indent:2, browser:true, devel:true, maxlen:80 nomen:false */
-/*global $ require __dirname */
+/*global $ require __dirname process */
 /* Copyright (c) 2010 Jeremiah Dodds <jeremiah.dodds@gmail.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -27,32 +27,121 @@ fs = require('fs'),
 http = require('http'),
 path = require('path'),
 events = require('events'),
-spawn = require('child_process').spawn,
-archiso_base = path.join(__dirname, 'archiso'),
-copy_tracker = new events.EventEmitter(),
-copy_directory = function (the_path, dest_path) {
-  fs.readdir(the_path, function (err, files) {
-    copy_tracker.emit('start_dir', files.length);
-    files.forEach(function (file) {
-      var the_file = path.join(the_path, file);
-      fs.stat(the_file, function (err, stats) {
-        var dest_file = path.join(dest_path, file);
-        if (stats.isDirectory()) {
-          fs.mkdir(dest_file, 0777, function (err) {
-            copy_tracker.emit('written');
-            copy_directory(the_file, dest_file);
-          });
-        } else {
-          fs.readFile(the_file, function (err, data) {
-            fs.writeFile(dest_file, data, function (err) {
-              copy_tracker.emit('written');
-            });
-          });
-        }
-      });
-    });
-  });
-},
+child_process = require('child_process'),
+makefile_templ = [
+  '#### Change these settings to modify how this ISO is built.',
+  '#  The directory that you\'ll be using for the actual build process.',
+  'WORKDIR=work',
+  '#  A list of packages to install, either space separated in a string or line separated in a file. Can include groups.',
+  'PACKAGES="$(shell cat packages.list) syslinux"',
+  '# The name of our ISO. Does not specify the architecture!',
+  'NAME=myarch',
+  '# Version will be appended to the ISO.',
+  'VER=1.00',
+  '# Kernel version. You\'ll need this. Don\'t change it.',
+  'kver_FILE=$(WORKDIR)/root-image/etc/mkinitcpio.d/kernel26.kver',
+  '# Architecture will also be appended to the ISO name.',
+  'ARCH?=x86_64',
+  '# Current working directory',
+  'PWD:=$(shell pwd)',
+  '# This is going to be the full name the final iso/img will carry',
+  'FULLNAME="$(PWD)"/$(NAME)-$(VER)-$(ARCH)',
+  '# Default make instruction to build everything.',
+  'all: myarch',
+  '# The following will first run the base-fs routine before creating the final iso image.',
+  'myarch: base-fs',
+  '	mkarchiso -v -p syslinux iso "$(WORKDIR)" "$(FULLNAME)".iso',
+  '# This is the main rule for make the working filesystem. It will run routines from left to right. ',
+  '# Thus, root-image is called first and syslinux is called last.',
+  'base-fs: root-image boot-files initcpio overlay iso-mounts syslinux',
+  '# The root-image routine is always executed first. ',
+  '# It only downloads and installs all packages into the $WORKDIR, giving you a basic system to use as a base.',
+  'root-image: "$(WORKDIR)"/root-image/.arch-chroot',
+  '"$(WORKDIR)"/root-image/.arch-chroot:',
+  'root-image:',
+  '	mkarchiso -v -p $(PACKAGES) create "$(WORKDIR)"',
+  '# Rule for make /boot',
+  'boot-files: root-image',
+  '	cp -r "$(WORKDIR)"/root-image/boot "$(WORKDIR)"/iso/',
+  '	cp -r boot-files/* "$(WORKDIR)"/iso/boot/',
+  '# Rules for initcpio images',
+  'initcpio: "$(WORKDIR)"/iso/boot/myarch.img',
+  '"$(WORKDIR)"/iso/boot/myarch.img: mkinitcpio.conf "$(WORKDIR)"/root-image/.arch-chroot',
+  '	mkdir -p "$(WORKDIR)"/iso/boot',
+  '	mkinitcpio -c ./mkinitcpio.conf -b "$(WORKDIR)"/root-image -k $(shell grep ^ALL_kver $(kver_FILE) | cut -d= -f2) -g $@',
+  '# See: Overlay',
+  'overlay:',
+  '	mkdir -p "$(WORKDIR)"/overlay/etc/pacman.d',
+  '	cp -r overlay "$(WORKDIR)"/',
+  '	wget -O "$(WORKDIR)"/overlay/etc/pacman.d/mirrorlist http://www.archlinux.org/mirrorlist/all/',
+  '	sed -i "s/#Server/Server/g" "$(WORKDIR)"/overlay/etc/pacman.d/mirrorlist',
+  '# Rule to process isomounts file.',
+  'iso-mounts: "$(WORKDIR)"/isomounts',
+  '"$(WORKDIR)"/isomounts: isomounts root-image',
+  '	sed "s|@ARCH@|$(ARCH)|g" isomounts > $@',
+  '# This routine is always executed just before generating the actual image. ',
+  'syslinux: root-image',
+  '	mkdir -p $(WORKDIR)/iso/boot/syslinux',
+  '	cp $(WORKDIR)/root-image/usr/lib/syslinux/*.c32 $(WORKDIR)/iso/boot/syslinux/',
+  '	cp $(WORKDIR)/root-image/usr/lib/syslinux/isolinux.bin $(WORKDIR)/iso/boot/syslinux/',
+  '# In case "make clean" is called, the following routine gets rid of all files created by this Makefile.',
+  'clean:',
+  '	rm -rf "$(WORKDIR)" "$(FULLNAME)".img "$(FULLNAME)".iso',
+  '.PHONY: all myarch',
+  '.PHONY: base-fs',
+  '.PHONY: root-image boot-files initcpio overlay iso-mounts',
+  '.PHONY: syslinux',
+  '.PHONY: clean'
+].join("\n"),
+isomounts_tmpl = [
+  'overlay.sqfs @ARCH@ / squashfs',
+  'root-image.sqfs @ARCH@ / squashfs',
+  '' // this is needed to avoid a kernel panic!
+].join("\n"),
+syslinux_cfg_tmpl = [
+  'prompt 1',
+  'timeout 0',
+  'display myarch.msg',
+  'DEFAULT myarch',
+  '',
+  'LABEL myarch',
+  'KERNEL /boot/vmlinuz26',
+  'APPEND initrd=/boot/myarch.img archisolabel=XXX locale=en_US.UTF-8',
+  ''
+].join("\n"),
+message_tmpl = [
+  'vousssoir (plural voussoirs)',
+  '  1. (architecture) One of a series of wedge-shaped bricks forming an arch',
+  '      or a vault.',
+  ''
+].join("\n"),
+fstab_tmpl = [
+  'aufs                   /             aufs      noauto              0      0',
+  'none                   /dev/pts      devpts    defaults            0      0',
+  'none                   /dev/shm      tmpfs     defaults            0      0',
+  ''
+].join("\n"),
+mkinitcpio_tmpl = [
+  'HOOKS="base udev archiso pata scsi sata usb fw filesystems usbinput"',
+  ''
+].join("\n"),
+packages_tmpl = [
+  'aufs2',
+  'aufs2-util',
+  'base',
+  'bash',
+  'coreutils',
+  'cpio',
+  'dhcpcd',
+  'dnsutils',
+  'file',
+  'fuse',
+  'kernel26',
+  'syslinux',
+  'nano',
+  ''
+].join("\n"),
+dir_perms = parseInt('755', 8),
 server = http.createServer(function (request, response) {
   if (request.method !== 'POST') {
     response.writeHead(405, {
@@ -76,44 +165,61 @@ server = http.createServer(function (request, response) {
       response.writeHead(202);
       sys.puts(JSON.stringify(user_data));
       response.end();
-      fs.mkdir(working_dir, 0777, function (err) {
-        var make_dir = path.join(working_dir, 'configs/syslinux-iso'),
-        num_files = 0,
-        done_files = 0;
-        copy_tracker.on('start_dir', function (num) {
-          num_files += num;
+      fs.mkdir(working_dir, dir_perms, function (err) {
+        var makefile = path.join(working_dir, 'Makefile');
+        fs.writeFile(makefile, makefile_templ, function (err) {
+          var mkinitcpio = path.join(working_dir, 'mkinitcpio.conf');
+          fs.writeFile(mkinitcpio, mkinitcpio_tmpl, function (err) {
+            var packages = path.join(working_dir, 'packages.list');
+            fs.writeFile(packages, packages_tmpl, function (err) {
+              var isomounts = path.join(working_dir, 'isomounts');
+              fs.writeFile(isomounts, isomounts_tmpl, function (err) {
+                var bootfiles = path.join(working_dir, 'boot-files');
+                fs.mkdir(bootfiles, dir_perms, function (err) {
+                  var syslinux = path.join(bootfiles, 'syslinux');
+                  fs.mkdir(syslinux, dir_perms, function (err) {
+                    var syslinux_cfg = path.join(syslinux, 'syslinux.cfg');
+                    fs.writeFile(syslinux_cfg, syslinux_cfg_tmpl, function (err) {
+                      var message = path.join(syslinux, 'myarch.msg');
+                      fs.writeFile(message, message_tmpl, function (err) {
+                        var overlay = path.join(working_dir, 'overlay');
+                        fs.mkdir(overlay, dir_perms, function (err) {
+                          var etc = path.join(overlay, 'etc');
+                          fs.mkdir(etc, dir_perms, function (err) {
+                            var fstab = path.join(etc, 'fstab');
+                            fs.writeFile(fstab, fstab_tmpl, function (err) {
+                              var env = process.env, maker, i;
+                              for (i in env) {
+                                if (env.hasOwnProperty(i)) {
+                                  sys.puts('env[' + i + ']: ' + env[i]);
+                                }
+                              }
+                              env.cwd = fs.realpathSync(working_dir);
+                              env.SHELL = '/bin/bash';
+                              env['_'] = '/usr/bin/env';
+                              maker = child_process.spawn(
+                                'make', ['all'], env
+                              );
+                              maker.on('exit', function (code) {
+                                sys.puts(user_data.name + ' finished with code: ' + code);
+                              });
+                              maker.stdout.on('data', function (data) {
+                                sys.puts(user_data.name + ' ' + data);
+                              });
+                              maker.stderr.on('data', function (data) {
+                                sys.puts(user_data.name + ' ERROR:: ' + data);
+                              });
+                            });
+                          });
+                        });
+                      });
+                    });
+                  });
+                });
+              });
+            });
+          });
         });
-        copy_tracker.on('written', function () {
-          done_files += 1;
-          if (done_files === num_files) {
-            fs.chmod(
-              path.join(make_dir, 'download-repo.sh'),
-              0755,
-              function (err) {
-                fs.writeFile(
-                  path.join(make_dir, 'packages.' + user_data.arch),
-                  user_data.packages.join('\n'),
-                  function (err) {
-                    var maker = spawn(
-                      'make', [],
-                      {'cwd': fs.realpathSync(make_dir)}
-                    );
-                    maker.on('exit', function (code) {
-                      sys.puts('finished with code: ' + code);
-                    });
-                    maker.stdout.on('data', function (data) {
-                      sys.puts(user_data.name + ' ' + data);
-                    });
-                    maker.stderr.on('data', function (data) {
-                      sys.puts(user_data.name + ' ERR: ' + data);
-                    });
-                  }
-                );
-              }
-            );
-          }
-        });
-        copy_directory(archiso_base, working_dir);
       });
     });
   }
