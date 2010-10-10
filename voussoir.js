@@ -125,22 +125,6 @@ mkinitcpio_tmpl = [
   'HOOKS="base udev archiso pata scsi sata usb fw filesystems usbinput"',
   ''
 ].join("\n"),
-packages_tmpl = [
-  'aufs2',
-  'aufs2-util',
-  'base',
-  'bash',
-  'coreutils',
-  'cpio',
-  'dhcpcd',
-  'dnsutils',
-  'file',
-  'fuse',
-  'kernel26',
-  'syslinux',
-  'nano',
-  ''
-].join("\n"),
 dir_perms = parseInt('755', 8),
 server = http.createServer(function (request, response) {
   if (request.method !== 'POST') {
@@ -161,7 +145,6 @@ server = http.createServer(function (request, response) {
       var user_data = JSON.parse(post_data),
       date = new Date(),
       working_dir = [user_data.name, '-', date.getTime()].join('');
-
       response.writeHead(202);
       sys.puts(JSON.stringify(user_data));
       response.end();
@@ -171,7 +154,7 @@ server = http.createServer(function (request, response) {
           var mkinitcpio = path.join(working_dir, 'mkinitcpio.conf');
           fs.writeFile(mkinitcpio, mkinitcpio_tmpl, function (err) {
             var packages = path.join(working_dir, 'packages.list');
-            fs.writeFile(packages, packages_tmpl, function (err) {
+            fs.writeFile(packages, user_data.packages.join("\n"), function (err) {
               var isomounts = path.join(working_dir, 'isomounts');
               fs.writeFile(isomounts, isomounts_tmpl, function (err) {
                 var bootfiles = path.join(working_dir, 'boot-files');
