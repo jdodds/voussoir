@@ -81,6 +81,18 @@
 
      sys.puts("Foobar: " + foobar.bar("bar"));
 
+** pacman
+   -b specify an alternative database location.
+   -r specify an alternative installation route
+   --cachedir specify an alternative cache location
+   --noconfirm
+   --noprogressbar
+   --arch specify an alternate archetecture
+
+   -S
+    -w download only
+** pacman.conf
+   LogFile
 * Bugs/issues
 ** iso generation
 *** Mon Sep 27 08:10:21 EDT 2010 ::
