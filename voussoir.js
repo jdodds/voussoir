@@ -28,6 +28,7 @@ http = require('http'),
 path = require('path'),
 events = require('events'),
 child_process = require('child_process'),
+Step = require('./step/lib/step'),
 makefile_templ = [
   '#### Change these settings to modify how this ISO is built.',
   '#  The directory that you\'ll be using for the actual build process.',
@@ -142,68 +143,121 @@ server = http.createServer(function (request, response) {
       post_data += chunk;
     });
     request.on('end', function () {
-      var user_data = JSON.parse(post_data),
-      date = new Date(),
-      working_dir = [user_data.name, '-', date.getTime()].join('');
-      response.writeHead(202);
-      sys.puts(JSON.stringify(user_data));
-      response.end();
-      fs.mkdir(working_dir, dir_perms, function (err) {
-        var makefile = path.join(working_dir, 'Makefile');
-        fs.writeFile(makefile, makefile_templ, function (err) {
-          var mkinitcpio = path.join(working_dir, 'mkinitcpio.conf');
-          fs.writeFile(mkinitcpio, mkinitcpio_tmpl, function (err) {
-            var packages = path.join(working_dir, 'packages.list');
-            fs.writeFile(packages, user_data.packages.join("\n"), function (err) {
-              var isomounts = path.join(working_dir, 'isomounts');
-              fs.writeFile(isomounts, isomounts_tmpl, function (err) {
-                var bootfiles = path.join(working_dir, 'boot-files');
-                fs.mkdir(bootfiles, dir_perms, function (err) {
-                  var syslinux = path.join(bootfiles, 'syslinux');
-                  fs.mkdir(syslinux, dir_perms, function (err) {
-                    var syslinux_cfg = path.join(syslinux, 'syslinux.cfg');
-                    fs.writeFile(syslinux_cfg, syslinux_cfg_tmpl, function (err) {
-                      var message = path.join(syslinux, 'myarch.msg');
-                      fs.writeFile(message, message_tmpl, function (err) {
-                        var overlay = path.join(working_dir, 'overlay');
-                        fs.mkdir(overlay, dir_perms, function (err) {
-                          var etc = path.join(overlay, 'etc');
-                          fs.mkdir(etc, dir_perms, function (err) {
-                            var fstab = path.join(etc, 'fstab');
-                            fs.writeFile(fstab, fstab_tmpl, function (err) {
-                              var env = process.env, maker, i;
-                              for (i in env) {
-                                if (env.hasOwnProperty(i)) {
-                                  sys.puts('env[' + i + ']: ' + env[i]);
-                                }
-                              }
-                              env.cwd = fs.realpathSync(working_dir);
-                              env.SHELL = '/bin/bash';
-                              env['_'] = '/usr/bin/env';
-                              maker = child_process.spawn(
-                                'make', ['all'], env
-                              );
-                              maker.on('exit', function (code) {
-                                sys.puts(user_data.name + ' finished with code: ' + code);
-                              });
-                              maker.stdout.on('data', function (data) {
-                                sys.puts(user_data.name + ' ' + data);
-                              });
-                              maker.stderr.on('data', function (data) {
-                                sys.puts(user_data.name + ' ERROR:: ' + data);
-                              });
-                            });
-                          });
-                        });
-                      });
-                    });
-                  });
-                });
-              });
-            });
+      Step(
+        function mkdir_working() {
+          var date = new Date();
+          this.user_data = JSON.parse(post_data);
+          this.working_dir = [
+            this.user_data.name,
+            '-',
+            date.getTime()
+          ].join('');
+          response.writeHead(202);
+          sys.puts(JSON.stringify(this.user_data));
+          response.end();
+          fs.mkdir(this.working_dir, dir_perms, this);
+        },
+        function write_makefile(err) {
+          if (err) {
+            throw err;
+          }
+          var makefile = path.join(this.working_dir, 'Makefile');
+          fs.writeFile(makefile, makefile_templ, this);
+        },
+        function write_mkinitcpio(err) {
+          if (err) {
+            throw err;
+          }
+          var mkinitcpio = path.join(this.working_dir, 'mkinitcpio.conf');
+          fs.writeFile(mkinitcpio, mkinitcpio_tmpl, this);
+        },
+        function write_packages_list(err) {
+          if (err) {
+            throw err;
+          }
+          var packages = path.join(this.working_dir, 'packages.list');
+          fs.writeFile(packages, this.user_data.packages.join("\n"), this);
+        },
+        function write_isomounts(err) {
+          if (err) {
+            throw err;
+          }
+          var isomounts = path.join(this.working_dir, 'isomounts');
+          fs.writeFile(isomounts, isomounts_tmpl, this);
+        },
+        function mkdir_bootfiles(err) {
+          if (err) {
+            throw err;
+          }
+          this.bootfiles = path.join(this.working_dir, 'boot-files');
+          fs.mkdir(this.bootfiles, dir_perms, this);
+        },
+        function mkdir_syslinux(err) {
+          this.syslinux = path.join(this.bootfiles, 'syslinux');
+          fs.mkdir(this.syslinux, dir_perms, this);
+        },
+        function write_syslinux_cfg(err) {
+          if (err) {
+            throw err;
+          }
+          this.syslinux_cfg = path.join(this.syslinux, 'syslinux.cfg');
+          fs.writeFile(this.syslinux_cfg, syslinux_cfg_tmpl, this);
+        },
+        function write_bootmsg(err) {
+          if (err) {
+            throw err;
+          }
+          var message = path.join(this.syslinux, 'myarch.msg');
+          fs.writeFile(message, message_tmpl, this);
+        },
+        function mkdir_overlay(err) {
+          if (err) {
+            throw err;
+          }
+          this.overlay = path.join(this.working_dir, 'overlay');
+          fs.mkdir(this.overlay, dir_perms, this);
+        },
+        function mkdir_etc(err) {
+          if (err) {
+            throw err;
+          }
+          this.etc = path.join(this.overlay, 'etc');
+          fs.mkdir(this.etc, dir_perms, this);
+        },
+        function write_fstab(err) {
+          var fstab = path.join(this.etc, 'fstab');
+          fs.writeFile(fstab, fstab_tmpl, this);
+        },
+        function get_cwd(err) {
+          if (err) {
+            throw err;
+          }
+          this.env = process.env;
+          this.env.SHELL = '/bin/bash';
+          this.env._ = '/usr/bin/env';
+          fs.realpath(this.working_dir, this);
+        },
+        function spin(err, cwd) {
+          if (err) {
+            throw err;
+          }
+          this.env.cwd = cwd;
+          var maker = child_process.spawn(
+            'make', ['all'], this.env
+          ),
+          user_data = this.user_data;
+          
+          maker.on('exit', function (code) {
+            sys.puts(user_data.name + ' finished with code: ' + code);
           });
-        });
-      });
+          maker.stdout.on('data', function (data) {
+            sys.puts(user_data.name + ' ' + data);
+          });
+          maker.stderr.on('data', function (data) {
+            sys.puts(user_data.name + ' ERROR:: ' + data);
+          });
+        }
+      );
     });
   }
 });
