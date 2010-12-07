@@ -110,12 +110,6 @@ syslinux_cfg_tmpl = [
   'APPEND initrd=/boot/myarch.img archisolabel=XXX locale=en_US.UTF-8',
   ''
 ].join("\n"),
-message_tmpl = [
-  'vousssoir (plural voussoirs)',
-  '  1. (architecture) One of a series of wedge-shaped bricks forming an arch',
-  '      or a vault.',
-  ''
-].join("\n"),
 fstab_tmpl = [
   'aufs                   /             aufs      noauto              0      0',
   'none                   /dev/pts      devpts    defaults            0      0',
@@ -208,7 +202,7 @@ server = http.createServer(function (request, response) {
             throw err;
           }
           var message = path.join(this.syslinux, 'myarch.msg');
-          fs.writeFile(message, message_tmpl, this);
+          fs.writeFile(message, this.user_data.boot_message.join("\n"), this);
         },
         function mkdir_overlay(err) {
           if (err) {
